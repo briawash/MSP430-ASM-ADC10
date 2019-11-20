@@ -1,0 +1,484 @@
+;CONSTANTLY READS IN AND DISPLAYS TEMPERATURE IN FAHRENHEIT UNTIL BUTTON FLAG IS
+;SET THEN WILL DISPLAY THE CELSIUS VALUE
+#include "msp430.h"                     ; #define controlled include file
+; This example illustrates the ADC10 hardware peripheral using interrupts and 
+; single conversion mode.
+
+        NAME    main                    ; module name
+
+        PUBLIC  main                    ; make the main label vissible
+                                        ; outside this module
+
+; Define labels to the memory locations that hold the values to display.
+#define THOU            0x200
+#define HUND            0x201
+#define TENS            0x202
+#define ONES            0x203
+
+#define SAVETHETEMP           0x204
+
+
+
+#define DIS2            0x20
+#define DIS3            0x10
+#define DIS4            0x08
+#define DIS5            0x04
+#define ALLD            0x3C
+
+#define SEG_DELAY       0x03F0
+
+        ORG     0FFFEh
+        DC16    init                    ; set reset vector to 'init' label
+
+        ORG     0FFE4h                  ; Set the address of the P1 ISR in the 
+                                        ; interrupt vector table.
+        DC16    SwitchToCValues                   ; Address is 16-bit.
+
+        ORG     0FFEAh                  ; ADC10 Vector
+        DC16    ADC10ISR
+            
+        RSEG    CSTACK                  ; pre-declaration of segment
+        RSEG    CODE                    ; place program in 'CODE' segment
+
+init:   MOV     #SFE(CSTACK), SP        ; set up stack
+        MOV.W   #WDTPW+WDTHOLD,&WDTCTL  ; Stop watchdog timer
+
+        BIS.W   #ADC10SHT_2, &ADC10CTL0 ; Sample and hold for 16 clock cycles
+        BIS.W   #ADC10ON, &ADC10CTL0    ; ADC10 on
+        
+        BIS.W   #INCH_0, &ADC10CTL1     ; Read the temperature       
+        BIS.B   #0x01, &ADC10AE0        ; Enable analog input A0
+        
+        Bis.W   #REF2_5V,  &ADC10CTL0
+         
+        BIS.W   #ENC, &ADC10CTL0        ; Enable conversion
+        BIS.W   #ADC10IE, &ADC10CTL0    ; Enable ADC10 Interrupt
+
+        MOV.B   #0xFF, &P2DIR           ; Configure the entirety of P2 as output
+        
+        ; Make sure the pins are set to GPIO mode.
+        MOV.B   #0x00, &P2SEL
+        MOV.B   #0x00, &P2SEL2
+
+        ; Configure P1.2,3,4, and 5 as outputs
+        MOV.B   #00111100b, &P1DIR
+
+        ; Make sure the pins are set to GPIO mode.
+        MOV.B   #0x00, &P1SEL
+        MOV.B   #0x00, &P1SEL2
+  
+        ; Clear the interrupt flag before enabling interrupts.
+        BIC.B   #0x40, &P1IFG
+        
+        ; Enable interrupts on P1.6 whenever falling edge occurs.
+        BIS.B   #0x40, &P1IE
+        BIS.B   #0x40, &P1IES
+
+        ; Initialize our idexes to 0x00
+        MOV.B   #0x00, &ONES
+        MOV.B   #0x00, &TENS
+        MOV.B   #0x00, &HUND
+        MOV.B   #0x00, &THOU
+      
+      ;Set up the clock
+        MOV.W #TASSEL_2+MC_3+ID_3, &TACTL
+        BIS.W   #TAIE, &TACTL
+        ; Enable global interrupts
+        EINT
+        
+PRESSEDBUTTON:       ; OKAY THE BUTTON IS PRESSED TIME TO MAKE SURE
+     
+      
+      BIT.B   #0x40, &P1IN 
+      MOV.B   #0x01, R14    
+      JZ    SwitchToCValues         ;OKAY ITS BEEN PRESSED GO SWITCH
+      
+      MOV.B #0x00,R14
+      MOV.B #0x00, R13
+      
+      BIS.B   LF, R13
+      CALL #TempsVsVoltages         ; GO FIND THE TEMP
+      
+      JMP main                  ;OKAY BACK TO MAIN
+      
+      
+
+SwitchToCValues:                              ;GO AHEAD AND PUT THE C VALUES TO display
+    
+        BIS.W   #ADC10SC, &ADC10CTL0;
+        MOV.B   #0x01, R14                                       
+        MOV.W    R12, R9
+        MOV.W   LC, R13         ;SWITCHES THE VALUES
+        Call  #ADC10ISR
+      
+        
+                ; Toggle P1.0
+        BIC.W   #TAIFG, &TACTL  
+       
+         
+
+     RETI    
+       
+main:   NOP   ; main program 
+
+       BIS.W   #ADC10SC, &ADC10CTL0; ;CONTINUOSULY READ IN
+       
+      
+  
+ 
+GoAheadNDisp: ; DISPLAY ON BOARD
+      
+        BIC.B   #ALLD, &P1OUT           ; Turn off all displays
+        BIS.B   #DIS5, &P1OUT           ; Turn on DIS5
+        MOV.B   &ONES, R4               ; Move the number to display to R4
+        MOV.B   R13, &P2OUT              ; Get the unit of measurement
+        MOV.W   #SEG_DELAY, R4          ; Pass the delay amount to DelayMS
+        CALL    #DelayMS  ; though R4
+        
+        
+        
+        BIC.B   #ALLD, &P1OUT           ; Turn off all displays
+        BIS.B   #DIS4, &P1OUT           ; Turn on DIS5
+        MOV.B   &TENS, R4               ; Move the number to display to R4
+        MOV.B   ZERO(R4), &P2OUT        ; Get the pattern from the lookup table
+        MOV.W   #SEG_DELAY, R4          ; Pass the delay amount to DelayMS
+                                        ; though R4; though R4
+        CALL    #DelayMS                                
+        
+ 
+        
+        BIC.B   #ALLD, &P1OUT           ; Turn off all displays
+        BIS.B   #DIS3, &P1OUT           ; Turn on DIS4
+        MOV.B   &HUND, R4               ; Move the number to display to R4
+        MOV.B   ZERO(R4), &P2OUT        ; Get the pattern from the lookup table
+        MOV.W   #SEG_DELAY, R4          ; Pass the delay amount to DelayMS
+        CALL    #DelayMS                       ; though R4
+        
+        
+   
+        
+        BIC.B   #ALLD, &P1OUT           ; Turn off all displays
+        BIS.B   #DIS2, &P1OUT           ; Turn on DIS3
+        MOV.B   &THOU, R4               ; Move the number to display to R4
+        MOV.B   ZERO(R4), &P2OUT        ; Get the pattern from the lookup table        
+        MOV.W   #SEG_DELAY, R4          ; Pass the delay amount to DelayMS
+        CALL    #DelayMS                     ; though R4.
+                                        
+     
+
+      RET
+       
+      
+ADC10ISR: ;go mask off the temps to put them into the display
+        MOV.W   &ADC10MEM, R6 
+        MOV.W   R9, R7
+        AND.W   #0x000F, R7             ; LSN mask off first
+        MOV.B   R7, &TENS
+        
+        MOV.W   R9, R7
+        RRC.W   R7                      ; Shift right four times to get the 
+        RRC.W   R7                      ; next nibble.
+        RRC.W   R7
+        RRC.W   R7
+        AND.W   #0x000F, R7             ; Mask off unwanted data
+        MOV.B   R7, &HUND        
+
+        MOV.W   R9, R7
+        RRC.W   R7                      ; Shift right eight times to get the 
+        RRC.W   R7                      ; next nibble.
+        RRC.W   R7
+        RRC.W   R7
+        RRC.W   R7
+        RRC.W   R7
+        RRC.W   R7
+        RRC.W   R7
+        AND.W   #0x000F, R7             ; Mask off unwanted data          
+        MOV.B   R7, &THOU  
+        
+       
+        
+        JMP GoAheadNDisp    ;READY TO DISPLAY ON BOARD
+
+
+; Lookup table        
+ZERO:   DC8    0x3F
+ONE:    DC8    0x06
+TWO:    DC8    0x5B
+THREE:  DC8    0x4F
+FOUR:   DC8    0x66
+FIVE:   DC8    0x6D
+SIX:    DC8    0x7D
+SEVEN:  DC8    0x07
+EIGHT:  DC8    0x7F
+NINE:   DC8    0x67
+LA:     DC8    0x77
+LB:     DC8    0x7C
+LC:     DC8    0x39
+LD:     DC8    0x5E
+LE:     DC8    0x79
+LF:     DC8    0x71
+COLON:  DC8    0x80
+PAD:    DC8    0x00
+
+
+GORETURN  ;go return the value so it can go mask then display: ; F  
+    MOV.W R9, R15
+      
+    
+
+      
+      RET
+      
+      
+TempsVsVoltages: 
+       
+    ;0 fahrenheit
+        MOV.W   #0x0000,R9  ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+        MOV.W  #0x15, R12   ; Its negative so just put 0 in case you might need it
+        MOV.W   #887, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE  GORETURN  ;go return the value so it can go mask then display
+	
+    ;10 fahrenheit
+        MOV.W   #0x10,R9	;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+	    MOV.W  #0x10, R12  ; Its negative so just put 0 in case you might need it
+        MOV.W   #800,R10    ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+    
+        JGE    GORETURN  ;go return the value so it can go mask then display
+	
+    ;15 fahrenheit
+        MOV.W   #0x15,R9    ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+        MOV.W  #0x7, R12    ; Its negative so just put 0 in case you might need it
+        MOV.W   #757, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+	    CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE  GORETURN  ;go return the value so it can go mask then display
+    
+    ;20 fahrenheit  
+        MOV.W   #0x20,R9  ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+	    MOV.W  #0x5, R12   ; Its negative so just put 0 in case you might need it
+        MOV.W   #714, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+	   JGE GORETURN  ;go return the value so it can go mask then display
+	
+    ;25 fahrenheit 	
+        MOV.W   #0x0025,R9  ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+        MOV.W  #0x0, R12 ; Its negative so just put 0 in case you might need it
+        MOV.W   #672, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+      
+        JGE  GORETURN  ;go return the value so it can go mask then display
+	
+    ;30 fahrenheit 	
+        MOV.W   #0x30,R9    ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+	    MOV.W  #0x0, R12	  ;Move Celsius value in case you might need it
+        MOV.W   #630, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE GORETURN  ;go return the value so it can go mask then display
+	
+    ;35 fahrenheit 	
+        MOV.W   #0x035,R9   ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+	    MOV.W  #0x3, R12   ;Move Celsius value in case you might need it
+        MOV.W   #591, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE  GORETURN  ;go return the value so it can go mask then display
+	
+    ;40 fahrenheit 	
+        MOV.W   #0x40,R9    ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+        MOV.W  #0x5, R12    ;Move Celsius value in case you might need it
+        MOV.W   #551, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        JGE  GORETURN  ;go return the value so it can go mask then display
+	
+    ;45 fahrenheit 	
+        MOV.W   #0x045,R9   ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+        MOV.W  #0x7, R12    ;Move Celsius value in case you might need it
+        MOV.W   #514, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE  GORETURN  ;go return the value so it can go mask then display
+	
+    ;50 fahrenheit 	
+        MOV.W   #0x50,R9   ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+	    MOV.W  #0x10, R12  ;Move Celsius value in case you might need it
+        MOV.W   #477, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        JGE  GORETURN  ;go return the value so it can go mask then display
+	
+    ;55 fahrenheit 	
+        MOV.W   #0x055,R9   ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+        MOV.W  #0x13, R12   ;Move Celsius value in case you might need it
+        MOV.W   #444, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE  GORETURN  ;go return the value so it can go mask then display
+	
+    ;60 fahrenheit 	 
+        MOV.W  #0x60,R9    ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+	    MOV.W  #0x15, R12  ;Move Celsius value in case you might need it
+        MOV.W   #411, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE  GORETURN  ;go return the value so it can go mask then display
+	
+    ;65 fahrenheit 	
+        MOV.W   #0x65,R9    ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+	    MOV.W  #0x17, R12   ;Move Celsius value in case you might need it
+        MOV.W   #365, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE  GORETURN  ;go return the value so it can go mask then display
+    
+    ;70 fahrenheit 
+       	MOV.W   #0x70,R9    ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+        MOV.W  #0x20, R12   ;Move Celsius value in case you might need it
+        MOV.W   #353, R10   ;MOVE THE CORRESPONDING VOLTAGE values
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE  GORETURN  ;go return the value so it can go mask then display
+    
+    ;75 fahrenheit  
+        MOV.W   #0x075,R9   ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+        MOV.W  #0x23, R12   ;Move Celsius value in case you might need it
+        MOV.W   #327, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6 ;   COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE  GORETURN  ;go return the value so it can go mask then display
+	
+    ;80 fahrenheit 	
+	    MOV.W   #0x80,R9   ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+        MOV.W  #0x25, R12  ;Move Celsius value in case you might need it
+        MOV.W   #301, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6  ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT   
+        
+        JGE  GORETURN  ;go return the value so it can go mask then display
+	
+    ;85 fahrenheit 	
+        MOV.W   #0x085,R9   ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+        MOV.W  #0x37, R12   ;Move Celsius value in case you might need it
+        MOV.W   #279, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE  GORETURN  ;go return the value so it can go mask then display
+	
+    ;90 fahrenheit 	
+	    MOV.W   #0x90,R9    ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+        MOV.W  #0x30, R12   ;Move Celsius value in case you might need it
+        MOV.W   #257, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+       
+        JGE  GORETURN  ;go return the value so it can go mask then display
+    
+    ;95 fahrenheit     
+        MOV.W   #0x095,R9   ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+        MOV.W  #0x33, R12   ;Move Celsius value in case you might need it
+        MOV.W   #238, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE  GORETURN  ;go return the value so it can go mask then display
+	
+    ;100 fahrenheit 	
+	    MOV.W   #0x100,R9   ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+        MOV.W  #0x35, R12   ;Move Celsius value in case you might need it
+        MOV.W   #219, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+
+        JGE  GORETURN  ;go return the value so it can go mask then display
+    
+    ;105 fahrenheit     
+	    MOV.W   #0x0105,R9 ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+        MOV.W  #0x37, R12  ;Move Celsius value in case you might need it
+        MOV.W   #203, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE  GORETURN  ;go return the value so it can go mask then display
+	
+    ;110 fahrenheit 
+	    MOV.W   #0x110,R9  ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST 
+	    MOV.W  #0x40, R12  ;Move Celsius value in case you might need it
+        MOV.W   #186, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE  GORETURN  ;go return the value so it can go mask then display
+	
+    ;115 fahrenheit 	
+        MOV.W   #0x115,R9   ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+        MOV.W  #0x47, R12   ;Move Celsius value in case you might need it
+        MOV.W   #173, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE  GORETURN  ;go return the value so it can go mask then display
+	
+    ;120 fahrenheit 	
+	    MOV.W   #0x120,R9  ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+        MOV.W  #0x45, R12  ;Move Celsius value in case you might need it
+        MOV.W   #159, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE  GORETURN  ;go return the value so it can go mask then display
+	
+    ;125 fahrenheit 	
+        MOV.W   #0x125,R9   ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+        MOV.W  #0x47, R12   ;Move Celsius value in case you might need it
+        MOV.W   #147, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE  GORETURN  ;go return the value so it can go mask then display
+		
+	;130 fahrenheit 
+        MOV.W   #0x130,R9   ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST	
+        MOV.W  #0x50, R12   ;Move Celsius value in case you might need it
+        MOV.W   #135, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE GORETURN  ;go return the value so it can go mask then display
+	
+    ;135 fahrenheit 	
+        MOV.W   #0x135,R9   ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+        MOV.W  #0x53, R12   ;Move Celsius value in case you might need it 
+        MOV.W   #125, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE  GORETURN  ;go return the value so it can go mask then display
+	
+    ;140 fahrenheit 	
+        MOV.W   #0x140,R9   ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+	    MOV.W  #0x55, R12   ;Move Celsius value in case you might need it
+        MOV.W   #115, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE  GORETURN  ;go return the value so it can go mask then display
+	
+    ;145 fahrenheit 
+        MOV.W   #0x145,R9	;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+        MOV.W  #0x57, R12   ;Move Celsius value in case you might need it
+        MOV.W   #107, R10   ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE  GORETURN  ;go return the value so it can go mask then display
+    
+    ;150 fahrenheit     
+        MOV.W   #0x150,R9   ;MOVE THE FAHRENHEIT VALUE JUST IN CASE FIRST
+        MOV.W  #0x60, R12   ;Move Celsius value in case you might need it
+        MOV.W   #99, R10    ;MOVE THE CORRESPONDING VOLTAGE VALUES
+        CMP.W   R10, R6     ;COMPARE THE TEMP SENSOR WITH THE TEMP ASSOC VOLT
+        
+        JGE  GORETURN  ;go return the value so it can go mask then display
+
+TAISR:
+        XOR.B   #0x01, &P1OUT           ; Toggle P1.0
+        BIC.W   #TAIFG, &TACTL          ; Clear the nterrupt flag
+        RETI       
+
+
+
+DelayMS:
+        DEC     R4
+        JNZ     DelayMS
+        RET
+END

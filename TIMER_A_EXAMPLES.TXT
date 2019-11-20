@@ -1,0 +1,298 @@
+TIMER A EXAMPLE 1
+; This example illustrates the use of Timer A. In this example an interrupt
+; is requested everytime TAR overflows. When the interrupt occurs P1.0 is 
+; toggled.
+
+#include "msp430.h"                     ; #define controlled include file
+
+        NAME    main                    ; module name
+
+        PUBLIC  main                    ; make the main label vissible
+                                        ; outside this module
+        ORG     0FFFEh
+        DC16    init                    ; set reset vector to 'init' label
+
+        ORG     0FFF0h                  ; Timer A Vector
+        DC16    TAISR                 
+            
+        RSEG    CSTACK                  ; pre-declaration of segment
+        RSEG    CODE                    ; place program in 'CODE' segment
+
+init:   MOV     #SFE(CSTACK), SP        ; set up stack
+        MOV.W   #WDTPW+WDTHOLD,&WDTCTL  ; Stop watchdog timer
+        BIS.B   #0x01, &P1DIR           ; P1.0 output
+        
+        MOV.W   #TASSEL_2+MC_2, &TACTL  ; SMCLK, contmode = continuous
+        BIS.W   #TAIE, &TACTL           ; Enable overflow interrupt
+        
+        ; Enable global interrupts
+        EINT
+
+main:   NOP                             ; main program
+        JMP $                           ; jump to current location '$'
+                                        ; (endless loop)
+                                            
+TAISR:
+        XOR.B   #0x01, &P1OUT           ; Toggle P1.0
+        BIC.W   #TAIFG, &TACTL          ; Clear the nterrupt flag
+        RETI
+                                            
+        END
+ TIMER A EXAMPLE2 
+; This example illustrates the use of Timer A. In this example an interrupt
+; is requested everytime TA reaches the value stored in TACCR0. When the 
+; interrupt occurs P1.0 is toggled.
+
+#include "msp430.h"                     ; #define controlled include file
+
+        NAME    main                    ; module name
+
+        PUBLIC  main                    ; make the main label vissible
+                                        ; outside this module
+        ORG     0FFFEh
+        DC16    init                    ; set reset vector to 'init' label
+
+        ORG     0FFF2h                  ; Timer A CCR0 Vector
+        DC16    TAISR                 
+            
+        RSEG    CSTACK                  ; pre-declaration of segment
+        RSEG    CODE                    ; place program in 'CODE' segment
+
+init:   MOV     #SFE(CSTACK), SP        ; set up stack
+        MOV.W   #WDTPW+WDTHOLD,&WDTCTL  ; Stop watchdog timer
+        BIS.B   #0x01, &P1DIR           ; P1.0 output
+        
+        MOV.W   #CCIE, &CCTL0           ; CCR0 interrupt enabled
+        MOV.W   #11628, &CCR0           ;
+        MOV.W   #TASSEL_2+MC_2, &TACTL  ; SMCLK, contmode
+        
+        ; Enable global interrupts
+        EINT
+
+main:   NOP                             ; main program
+        JMP $                           ; jump to current location '$'
+                                        ; (endless loop)
+                                            
+TAISR:
+        XOR.B   #0x01, &P1OUT           ; Toggle P1.0
+        ADD.W   #11628, &CCR0           ; Add Offset to CCR0
+        RETI
+        
+	END
+TIMER A EXAMPLE3
+#include "msp430.h"                     ; #define controlled include file
+; This program outputs the clocck onto a physical pin.
+
+        NAME    main                    ; module name
+
+        PUBLIC  main                    ; make the main label vissible
+                                        ; outside this module
+        ORG     0FFFEh
+        DC16    init                    ; set reset vector to 'init' label
+
+        RSEG    CSTACK                  ; pre-declaration of segment
+        RSEG    CODE                    ; place program in 'CODE' segment
+
+init:   MOV     #SFE(CSTACK), SP        ; set up stack
+        MOV.W   #WDTPW+WDTHOLD,&WDTCTL  ; Stop watchdog timer
+        
+        MOV.W   #0280h,SP               ; Initialize stackpointer
+        MOV.W   #WDTPW+WDTHOLD,&WDTCTL  ; Stop WDT
+        
+        MOV.B   #0x10, &P1DIR           ; P1.4 output direction
+        BIS.B   #0x10, &P1SEL           ; P1.4 = SMCLK
+
+main:   NOP                             ; main program        
+        JMP $                           ; jump to current location '$'
+                                        ; (endless loop)
+                                        
+        END
+TIMER A EXAMPLE 4
+; This program shows basic PWM functionality of the MSP430
+
+#include "msp430.h"                     ; #define controlled include file
+
+        NAME    main                    ; module name
+
+        PUBLIC  main                    ; make the main label vissible
+                                        ; outside this module
+        ORG     0FFFEh
+        DC16    init                    ; set reset vector to 'init' label
+
+        RSEG    CSTACK                  ; pre-declaration of segment
+        RSEG    CODE                    ; place program in 'CODE' segment
+
+init:   MOV     #SFE(CSTACK), SP        ; set up stack
+        MOV.W   #WDTPW+WDTHOLD,&WDTCTL  ; Stop watchdog timer
+
+        BIS.B   #0x04, &P1DIR           ; Set P1.2 as output
+        BIS.B   #0x04, &P1SEL           ; TA1 Option select for P1.2
+        
+        MOV.W   #11628, &TACCR0         ; Set the period in CCR0
+        MOV.W   #OUTMOD_7, &TACCTL1     ; Set the CCR1 register mode to reset/set
+        MOV.W   #1907, &TACCR1         ; Set the duty cycle to 50%
+        
+        MOV.W   #TASSEL_2+MC_1, &TACTL  ; Setup the timer as normal
+                                        ; SMCLK and Up count mode
+        
+main:   NOP                             ; main program
+        JMP $                           ; jump to current location '$'
+                                        ; (endless loop)
+        END
+TIMER A EXAMPLE5
+; This example shows the use of a lookuptable in conjunction with a 1-bit
+; DAC to generate a sine wave.
+#include "msp430.h"                     ; #define controlled include file
+
+        NAME    main                    ; module name
+
+        PUBLIC  main                    ; make the main label vissible
+                                        ; outside this module
+        ORG     0FFFEh
+        DC16    init                    ; set reset vector to 'init' label
+
+        RSEG    CSTACK                  ; pre-declaration of segment
+        RSEG    CODE                    ; place program in 'CODE' segment
+
+        sineTable:                                
+        DC16    5814, 5957, 6099, 6242, 6384, 6526, 6667, 6808, 6948, 7088 
+        DC16    7227, 7365, 7502, 7638, 7773, 7906, 8039, 8170, 8300, 8428 
+        DC16    8555, 8680, 8803, 8924, 9044, 9162, 9277, 9391, 9502, 9612 
+        DC16    9718, 9823, 9925, 10025, 10122, 10216, 10308, 10397, 10484
+        DC16    10567, 10648, 10726, 10801, 10873, 10941, 11007, 11070, 11129 
+        DC16    11185, 11238, 11288, 11335, 11378, 11417, 11454, 11487, 11516 
+        DC16    11542, 11565, 11584, 11600, 11612, 11621, 11626, 11628, 11626 
+        DC16    11621, 11612, 11600, 11584, 11565, 11542, 11516, 11487, 11454 
+        DC16    11417, 11378, 11335, 11288, 11238, 11185, 11129, 11070, 11007 
+        DC16    10941, 10873, 10801, 10726, 10648, 10567, 10484, 10397, 10308 
+        DC16    10216, 10122, 10025, 9925, 9823, 9718, 9612, 9502, 9391, 9277 
+        DC16    9162, 9044, 8924, 8803, 8680, 8555, 8428, 8300, 8170, 8039 
+        DC16    7906, 7773, 7638, 7502, 7365, 7227, 7088, 6948, 6808, 6667 
+        DC16    6526, 6384, 6242, 6099, 5957, 5814, 5671, 5529, 5386, 5244 
+        DC16    5102, 4961, 4820, 4680, 4540, 4401, 4263, 4126, 3990, 3855 
+        DC16    3722, 3589, 3458, 3328, 3200, 3073, 2948, 2825, 2704, 2584 
+        DC16    2466, 2351, 2237, 2126, 2016, 1910, 1805, 1703, 1603, 1506 
+        DC16    1412, 1320, 1231, 1144, 1061, 980, 902, 827, 755, 687, 621 
+        DC16    558, 499, 443, 390, 340, 293, 250, 211, 174, 141, 112, 86
+        DC16    63, 44, 28, 16, 7, 2, 0, 2, 7, 16, 28, 44, 63, 86, 112, 141 
+        DC16    174, 211, 250, 293, 340, 390, 443, 499, 558, 621, 687, 755 
+        DC16    827, 902, 980, 1061, 1144, 1231, 1320, 1412, 1506, 1603 
+        DC16    1703, 1805, 1910, 2016, 2126, 2237, 2351, 2466, 2584, 2704 
+        DC16    2825, 2948, 3073, 3200, 3328, 3458, 3589, 3722, 3855, 3990 
+        DC16    4126, 4263, 4401, 4540, 4680, 4820, 4961, 5102, 5244, 5386 
+        DC16    5529, 5671
+        
+init:   MOV     #SFE(CSTACK), SP        ; set up stack
+        MOV.W   #WDTPW+WDTHOLD,&WDTCTL  ; Stop watchdog timer
+
+        BIS.B   #0x04, &P1DIR           ; Set P1.2 as output
+        BIS.B   #0x04, &P1SEL           ; TA1 Option select for P1.2
+        
+        MOV.W   #11628, &TACCR0         ; Set the period in CCR0
+        MOV.W   #OUTMOD_7, &TACCTL1     ; Set the CCR1 register mode to set/reset
+        MOV.W   #sineTable, R5
+        MOV.W   @R5, &TACCR1            ; Set the duty cycle to the first value
+                                        ; in the table.
+        
+        MOV.W   #TASSEL_2+MC_1, &TACTL  ; Setup the timer as normal
+                                        ; SMCLK and Up count mode
+                                        
+main:   NOP                             ; main program
+        MOV.W   #0x01FF, R4             ; Set the delay
+        CALL    #DelayMS
+        INCD    R5                      ; Increment R6 twice
+        AND.W   #sineTable+0xFF, R5
+        MOV.W   @R5, &TACCR1            ; Set the duty cycle to the next value
+                                        ; in the table.
+        
+        JMP main                        ; jump to current location '$'
+                                        ; (endless loop)                              
+DelayMS:
+        DEC     R4
+        JNZ     DelayMS
+        RET
+
+        END
+TIMER A EXAMPLE 6
+; This example shows the use of a lookuptable in conjunction with a 1-bit
+; DAC to generate a sine wave. In this version the PWM frequency is increased 
+; to obtain better results. The DCO frequency is increased.
+#include "msp430.h"                     ; #define controlled include file
+
+        NAME    main                    ; module name
+
+        PUBLIC  main                    ; make the main label vissible
+                                        ; outside this module
+        ORG     0FFFEh
+        DC16    init                    ; set reset vector to 'init' label
+
+        RSEG    CSTACK                  ; pre-declaration of segment
+        RSEG    CODE                    ; place program in 'CODE' segment
+
+        sineTable:                                
+        DC16    5814, 5957, 6099, 6242, 6384, 6526, 6667, 6808, 6948, 7088 
+        DC16    7227, 7365, 7502, 7638, 7773, 7906, 8039, 8170, 8300, 8428 
+        DC16    8555, 8680, 8803, 8924, 9044, 9162, 9277, 9391, 9502, 9612 
+        DC16    9718, 9823, 9925, 10025, 10122, 10216, 10308, 10397, 10484
+        DC16    10567, 10648, 10726, 10801, 10873, 10941, 11007, 11070, 11129 
+        DC16    11185, 11238, 11288, 11335, 11378, 11417, 11454, 11487, 11516 
+        DC16    11542, 11565, 11584, 11600, 11612, 11621, 11626, 11628, 11626 
+        DC16    11621, 11612, 11600, 11584, 11565, 11542, 11516, 11487, 11454 
+        DC16    11417, 11378, 11335, 11288, 11238, 11185, 11129, 11070, 11007 
+        DC16    10941, 10873, 10801, 10726, 10648, 10567, 10484, 10397, 10308 
+        DC16    10216, 10122, 10025, 9925, 9823, 9718, 9612, 9502, 9391, 9277 
+        DC16    9162, 9044, 8924, 8803, 8680, 8555, 8428, 8300, 8170, 8039 
+        DC16    7906, 7773, 7638, 7502, 7365, 7227, 7088, 6948, 6808, 6667 
+        DC16    6526, 6384, 6242, 6099, 5957, 5814, 5671, 5529, 5386, 5244 
+        DC16    5102, 4961, 4820, 4680, 4540, 4401, 4263, 4126, 3990, 3855 
+        DC16    3722, 3589, 3458, 3328, 3200, 3073, 2948, 2825, 2704, 2584 
+        DC16    2466, 2351, 2237, 2126, 2016, 1910, 1805, 1703, 1603, 1506 
+        DC16    1412, 1320, 1231, 1144, 1061, 980, 902, 827, 755, 687, 621 
+        DC16    558, 499, 443, 390, 340, 293, 250, 211, 174, 141, 112, 86
+        DC16    63, 44, 28, 16, 7, 2, 0, 2, 7, 16, 28, 44, 63, 86, 112, 141 
+        DC16    174, 211, 250, 293, 340, 390, 443, 499, 558, 621, 687, 755 
+        DC16    827, 902, 980, 1061, 1144, 1231, 1320, 1412, 1506, 1603 
+        DC16    1703, 1805, 1910, 2016, 2126, 2237, 2351, 2466, 2584, 2704 
+        DC16    2825, 2948, 3073, 3200, 3328, 3458, 3589, 3722, 3855, 3990 
+        DC16    4126, 4263, 4401, 4540, 4680, 4820, 4961, 5102, 5244, 5386 
+        DC16    5529, 5671
+        
+init:   MOV     #SFE(CSTACK), SP        ; set up stack
+        MOV.W   #WDTPW+WDTHOLD,&WDTCTL  ; Stop watchdog timer
+
+        ; Increase Speed
+        BIS.B   #DCO1+DCO2, &DCOCTL
+        BIS.B   #RSEL0+RSEL1+RSEL2+RSEL3, &BCSCTL1
+        
+        BIS.B   #0x04, &P1DIR           ; Set P1.2 as output
+        BIS.B   #0x04, &P1SEL           ; TA1 Option select for P1.2
+        
+        MOV.W   #11628, &TACCR0         ; Set the period in CCR0
+        MOV.W   #OUTMOD_7, &TACCTL1     ; Set the CCR1 register mode to set/reset
+        MOV.W   #sineTable, R5
+        MOV.W   @R5, &TACCR1            ; Set the duty cycle to the first value
+                                        ; in the table.
+        
+        MOV.W   #TASSEL_2+MC_1, &TACTL  ; Setup the timer as normal
+                                        ; SMCLK and Up count mode
+                                        
+main:   NOP                             ; main program
+        MOV.W   #0xFFFF, R4             ; Set the delay
+        CALL    #DelayMS
+        MOV.W   #0xFFFF, R4             ; Set the delay
+        CALL    #DelayMS
+        MOV.W   #0xFFFF, R4             ; Set the delay
+        CALL    #DelayMS        
+        INCD    R5                      ; Increment R6 twice
+        AND.W   #sineTable+0xFF, R5
+        MOV.W   @R5, &TACCR1            ; Set the duty cycle to the next value
+                                        ; in the table.
+        
+        JMP main                        ; jump to current location '$'
+                                        ; (endless loop)                              
+DelayMS:
+        DEC     R4
+        JNZ     DelayMS
+        RET
+
+        END
